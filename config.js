@@ -5,6 +5,6 @@ window.PLANNER_CONFIG = Object.freeze({
   oauthClientId: '497300492165-f699ap43ic2ogqc232er7dmplqfp5cm1.apps.googleusercontent.com',
   apBiologyId: '1QTzKPG-TTYjklQ1fcZ2qSHI6k-ePjQgBvawBxG4M5G8',
   anatomyId: '1Bh1VBLSu01Ja00l4Gs7bsUL41FIrCuxtsk6b0WlFqiM',
-  apBiologyPage: '',
-  anatomyPage: ''
+  apBiologyPage: 'https://zelensky-ea.github.io/Zelensky/ap-biology/',
+  anatomyPage: 'https://zelensky-ea.github.io/Zelensky/anatomy-physiology/'
 });

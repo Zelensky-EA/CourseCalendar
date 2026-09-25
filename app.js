@@ -9,12 +9,14 @@ const $=id=>document.getElementById(id);
 const state={token:'',expires:0,client:null,courses:{},week:null,courseFilter:'all',current:null,busy:false,saving:false};
 const dayNames=['Monday','Tuesday','Wednesday','Thursday','Friday'];
 const district=window.DISTRICT_CALENDAR;
+const WEEK_COUNT=district.weeks.length,DAY_COUNT=WEEK_COUNT*5,LAST_ROW=DAY_COUNT+3;
+const weekLabel=index=>district.weeks[index].label;
 const districtEvents=date=>date?district.events.filter(([start,end])=>start<=date&&date<=end):[];
 const noSchool=date=>districtEvents(date).some(event=>event[3]==='closed');
 const isHomeworkDay=(key,day)=>key==='bio'&&(day.row-4)%5===3;
 function lessonFor(key,day){
   if(key==='anatomy'&&(day.row-4)%5===3){const wed=state.courses.anatomy?.days?.[day.row-5];
-    return wed?{...day,topic:wed.topic,topicTitle:wed.topicTitle,classPlan:wed.classPlan,mirror:wed}:day;
+    return wed?{...day,topic:wed.topic,topicTitle:wed.topicTitle,classPlan:wed.classPlan,target:wed.target,resourceOne:wed.resourceOne,resourceTwo:wed.resourceTwo,mirror:wed}:day;
   }
   return day;
 }
@@ -45,22 +47,22 @@ function parseTopics(key,rows){return (rows||[]).map(row=>{
   if(key==='bio')return {code:clean(row[0]),title:clean(row[1]).split('\n')[0],target:clean(row[5]),resources:[['Read before class',clean(row[2])],['BIOZONE / class work',clean(row[3])],['After class',clean(row[4])]].filter(x=>x[1]),detail:clean(row[7])};
   return {code:clean(row[0]),title:clean(row[1]),target:clean(row[3]),resources:[['BIOZONE',clean(row[5])],['BIOZONE pages',clean(row[6])],['Crash Course',clean(row[8])]].filter(x=>x[1]),detail:clean(row[4])};
 }).filter(topic=>topic.code&&topic.title);}
-function parseDays(rows){return Array.from({length:180},(_,index)=>{
+function parseDays(rows){return Array.from({length:DAY_COUNT},(_,index)=>{
   const row=rows?.[index]||[],sheetRow=index+4;
-  return {row:sheetRow,week:clean(row[0]),weekday:clean(row[1])||dayNames[index%5],date:htmlDate(row[2]),rawDate:row[2]??'',topic:clean(row[3]),topicTitle:clean(row[4]),classPlan:safeText(row[5]),resourceOne:safeText(row[6]),resourceTwo:safeText(row[7]),homework:safeText(row[8]),target:safeText(row[9]),note:safeText(row[10]),taught:row[11]===true||safeText(row[11]).toLowerCase()==='true',rawTaught:row[11]??''};
+  return {row:sheetRow,week:clean(row[0]),weekday:clean(row[1])||dayNames[index%5],date:htmlDate(row[2])||district.dateFor(index),rawDate:row[2]??'',topic:clean(row[3]),topicTitle:clean(row[4]),classPlan:safeText(row[5]),resourceOne:safeText(row[6]),resourceTwo:safeText(row[7]),homework:safeText(row[8]),target:safeText(row[9]),note:safeText(row[10]),taught:row[11]===true||safeText(row[11]).toLowerCase()==='true',rawTaught:row[11]??''};
 });}
 async function fetchCourse(key){const course=COURSES[key];
   const params=new URLSearchParams({valueRenderOption:'UNFORMATTED_VALUE',dateTimeRenderOption:'SERIAL_NUMBER'});
-  params.append('ranges',a1(course.calendar)+'!A3:L183');params.append('ranges',a1(course.reference)+'!'+course.referenceRange);
-  const [batch,meta]=await Promise.all([api(course,'/values:batchGet?'+params),api(course,'?fields=sheets.properties(sheetId,title)')]);
+  params.append('ranges',a1(course.calendar)+'!A3:L'+LAST_ROW);params.append('ranges',a1(course.reference)+'!'+course.referenceRange);
+  const [batch,meta]=await Promise.all([api(course,'/values:batchGet?'+params),api(course,'?fields=sheets.properties(sheetId,title,gridProperties(rowCount))')]);
   const sheet=meta.sheets?.find(item=>item.properties?.title===course.calendar);
   if(!sheet)throw Error('Could not find '+course.calendar+' in '+course.name+'.');
   const main=batch.valueRanges?.[0]?.values||[];
   const statusHeader=clean(main[0]?.[11]);
-  return {days:parseDays(main.slice(1)),topics:parseTopics(key,batch.valueRanges?.[1]?.values),sheetId:sheet.properties.sheetId,statusHeader,updated:Date.now()};
+  return {days:parseDays(main.slice(1)),topics:parseTopics(key,batch.valueRanges?.[1]?.values),sheetId:sheet.properties.sheetId,rowCount:sheet.properties.gridProperties?.rowCount||0,statusHeader,updated:Date.now()};
 }
 function firstWeek(){const today=localToday();let previous=null,next=null;
-  for(let i=0;i<36;i++)for(const key of Object.keys(COURSES)){
+  for(let i=0;i<WEEK_COUNT;i++)for(const key of Object.keys(COURSES)){
     const date=state.courses[key]?.days?.[i*5]?.date;
     if(!date)continue;
     if(date<=today)previous=i;else if(next===null)next=i;
@@ -68,7 +70,7 @@ function firstWeek(){const today=localToday();let previous=null,next=null;
   return previous??next??0;
 }
 async function load(initial=false){if(!connected()||state.busy||state.saving)return;
-  state.busy=true;$('refresh').disabled=true;notice('Refreshing course calendars…');
+  state.busy=true;$('refresh').disabled=true;$('fill-dates').disabled=true;notice('Refreshing course calendars…');
   try{
     const result=await Promise.allSettled(Object.keys(COURSES).map(fetchCourse));
     let errors=[];Object.keys(COURSES).forEach((key,i)=>{if(result[i].status==='fulfilled')state.courses[key]=result[i].value;else errors.push(COURSES[key].short+': '+result[i].reason.message);});
@@ -77,7 +79,38 @@ async function load(initial=false){if(!connected()||state.busy||state.saving)ret
     $('app').classList.remove('hidden');render();
     notice(errors.length?'Some calendars could not load. '+errors.join(' | '):'Live calendars refreshed at '+new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),errors.length?'error':'success');
   }catch(err){notice(err.message,'error');}
-  finally{state.busy=false;$('refresh').disabled=false;}
+  finally{state.busy=false;$('refresh').disabled=false;$('fill-dates').disabled=false;}
+}
+async function fillCourseDates(key){const course=COURSES[key],data=state.courses[key];if(!data)throw Error(course.short+' has not loaded.');
+  const range=a1(course.calendar)+'!A3:L'+LAST_ROW;
+  const snapshot=await api(course,'/values/'+encodeURIComponent(range)+'?valueRenderOption=FORMULA&dateTimeRenderOption=SERIAL_NUMBER');
+  const rows=snapshot.values||[],template=rows[180]||[],formulaColumns=[4,6,7,9];
+  if(formulaColumns.some(col=>!safeText(template[col]).startsWith('=')))throw Error(course.short+': could not verify formula templates in row 183. No dates were changed.');
+  const requests=[];let filled=0,renamed=0,extended=0;
+  for(let index=0;index<DAY_COUNT;index++){
+    const row=index+4,live=rows[row-3]||[],week=Math.floor(index/5),label=district.weeks[week].sheetWeek,oldWeek=clean(live[0]),oldDay=clean(live[1]),expectedDay=dayNames[index%5].slice(0,3);
+    if(oldWeek&&oldWeek!==String(week+1)&&oldWeek!==String(label))throw Error(course.short+': week label A'+row+' has a custom value. No dates were changed.');
+    if(oldDay&&oldDay.toLowerCase()!==expectedDay.toLowerCase()&&oldDay.toLowerCase()!==dayNames[index%5].toLowerCase())throw Error(course.short+': weekday B'+row+' has a custom value. No dates were changed.');
+    const cell=(columnIndex,userEnteredValue)=>requests.push({updateCells:{start:{sheetId:data.sheetId,rowIndex:row-1,columnIndex},rows:[{values:[{userEnteredValue}]}],fields:'userEnteredValue'}});
+    if(oldWeek!==String(label)){cell(0,typeof label==='number'?{numberValue:label}:{stringValue:label});renamed++;}
+    if(!oldDay)cell(1,{stringValue:expectedDay});
+    if(live[2]===undefined||live[2]===null||live[2]===''){cell(2,{numberValue:serialDate(district.dateFor(index))});filled++;}
+    if(row>183)for(const col of formulaColumns){if(!live[col]){cell(col,{formulaValue:template[col].replaceAll('$D183','$D'+row)});extended++;}}
+  }
+  if(!requests.length)return {filled,renamed,extended};
+  if(data.rowCount<LAST_ROW)await api(course,':batchUpdate',{method:'POST',body:JSON.stringify({requests:[{appendDimension:{sheetId:data.sheetId,dimension:'ROWS',length:LAST_ROW-data.rowCount}}]})});
+  requests.unshift({repeatCell:{range:{sheetId:data.sheetId,startRowIndex:183,endRowIndex:LAST_ROW,startColumnIndex:2,endColumnIndex:3},cell:{userEnteredFormat:{numberFormat:{type:'DATE',pattern:'mmm d, yyyy'}}},fields:'userEnteredFormat.numberFormat'}});
+  await api(course,':batchUpdate',{method:'POST',body:JSON.stringify({requests})});
+  return {filled,renamed,extended};
+}
+async function fillDates(){if(!connected()||state.busy||state.saving)return;state.busy=true;$('fill-dates').disabled=true;$('refresh').disabled=true;
+  notice('Adding 2026–27 dates, break weeks, and semester week labels to your two sheets…');
+  const successes=[],failures=[];
+  for(const key of Object.keys(COURSES))try{const changes=await fillCourseDates(key);successes.push(COURSES[key].short+': '+changes.filled+' dates added');}
+    catch(error){failures.push(COURSES[key].short+': '+error.message);}
+  state.busy=false;$('fill-dates').disabled=false;$('refresh').disabled=false;
+  await load(false);
+  notice(successes.concat(failures).join(' | ')+(failures.length?' · Check access and retry.':' · Sheets are up to date.'),failures.length?'error':'success');
 }
 function connect(){try{assertConfig();}catch(err){notice(err.message,'error');return;}
   if(!window.google?.accounts?.oauth2){notice('Google sign-in has not loaded. Refresh this page and try again.','error');return;}
@@ -108,15 +141,15 @@ function renderSummary(){let waiting=0;
 }
 function dayFor(key,week,offset){return state.courses[key]?.days?.[week*5+offset];}
 function resolvedDate(week,offset){for(const key of Object.keys(COURSES)){const date=dayFor(key,week,offset)?.date;if(date)return date;}return '';}
-function renderWeek(){const week=Math.min(35,Math.max(0,state.week||0));state.week=week;
-  const picker=$('week-picker');picker.replaceChildren();for(let n=0;n<36;n++){
+function renderWeek(){const week=Math.min(WEEK_COUNT-1,Math.max(0,state.week||0));state.week=week;
+  const picker=$('week-picker');picker.replaceChildren();for(let n=0;n<WEEK_COUNT;n++){
     const date=Array.from({length:5},(_,i)=>resolvedDate(n,i)).find(Boolean);
-    picker.add(new Option('Week '+(n+1)+(date?' · '+formatDate(date):''),String(n)));
+    picker.add(new Option(weekLabel(n)+(date?' · '+formatDate(date):''),String(n)));
   }picker.value=String(week);
   const dates=Array.from({length:5},(_,i)=>resolvedDate(week,i)).filter(Boolean);
-  $('week-title').textContent='Week '+(week+1);
+  $('week-title').textContent=weekLabel(week);
   $('week-range').textContent=dates.length?formatDate(dates[0])+' – '+formatDate(dates[dates.length-1],{month:'short',day:'numeric',year:'numeric'}):'Dates can be added in any daily plan.';
-  $('previous').disabled=week===0;$('next').disabled=week===35;
+  $('previous').disabled=week===0;$('next').disabled=week===WEEK_COUNT-1;
   const grid=$('week-grid');grid.replaceChildren();let taught=0,scheduled=0;
   for(let i=0;i<5;i++){
     const date=resolvedDate(week,i),events=districtEvents(date),card=text(grid,'article','','day'+(date===localToday()?' today':'')+(noSchool(date)?' closed-day':''));
@@ -134,6 +167,8 @@ function renderWeek(){const week=Math.min(35,Math.max(0,state.week||0));state.we
       else if(!homeworkOnly)text(lesson,'div','No topic selected','lesson-empty');
       if(!homeworkOnly&&clean(view.classPlan))text(lesson,'p',clean(view.classPlan),'plan-preview');
       if(clean(day.homework))text(lesson,'p','Homework: '+clean(day.homework),'plan-preview');
+      if(clean(day.note))text(lesson,'p','Teacher note: '+clean(day.note),'note-preview');
+      if(!homeworkOnly&&clean(view.target))text(lesson,'p','Target: '+clean(view.target),'target-preview');
       const button=text(lesson,'button',homeworkOnly?'Edit homework':planned(day)?'Edit plan':'Add plan','edit-lesson');button.type='button';button.onclick=()=>openEditor(key,day);
     }
   }
@@ -160,9 +195,12 @@ function renderTopics(){const root=$('topic-results');root.replaceChildren();con
       else notice(topic.code+' · '+topic.title+' is not scheduled yet. Select an open day in '+COURSES[key].short+' to add it.');};
   }
 }
-function renderLinks(){const root=$('course-links');root.replaceChildren();let found=false;for(const course of Object.values(COURSES)){if(!course.page)continue;
-  try{const url=new URL(course.page);if(!['https:','http:'].includes(url.protocol))continue;const a=text(root,'a',course.name+' page ↗');a.href=url.href;a.target='_blank';a.rel='noopener noreferrer';found=true;}catch{}
-  }if(!found)text(root,'p','Add your existing course page links in config.js to see them here.','side-help');}
+function renderLinks(){const root=$('course-links');root.replaceChildren();const links=[
+    ['AP Biology Navigator',CFG.apBiologyPage],['Anatomy & Physiology Navigator',CFG.anatomyPage],
+    ['AP Classroom','https://apclassroom.collegeboard.org/'],['TeachQuest classroom','https://teach-quest.com/classroom'],['Clever teacher','https://clever.com/in/suhsd/teacher']
+  ];
+  for(const [label,address] of links){if(!address)continue;try{const url=new URL(address);if(url.protocol!=='https:')continue;const a=text(root,'a',label+' ↗');a.href=url.href;a.target='_blank';a.rel='noopener noreferrer';}catch{}}
+}
 function render(){renderSummary();renderWeek();renderRadar();renderDistrictDates();renderTopics();renderLinks();}
 function topicContext(key,code){const topic=state.courses[key]?.topics.find(item=>item.code===code);if(!topic)return 'Choose a topic to see its learning target and resources.';
   return [topic.title,topic.target?'Target: '+topic.target:'',...topic.resources.slice(0,3).map(([label,value])=>label+': '+value),topic.detail?'Planning note: '+topic.detail:''].filter(Boolean).join('\n');
@@ -170,7 +208,7 @@ function topicContext(key,code){const topic=state.courses[key]?.topics.find(item
 function openEditor(key,day){if(!connected()){notice('Connect Google to edit a lesson.','error');return;}
   state.current={key,row:day.row,original:{...day}};
   const form=$('edit-form'),config=COURSES[key],course=state.courses[key],thursday=(day.row-4)%5===3,mirror=key==='anatomy'&&thursday,homeworkOnly=isHomeworkDay(key,day),view=lessonFor(key,day);
-  $('edit-course').textContent=config.name+' · Week '+(Math.floor((day.row-4)/5)+1);
+  $('edit-course').textContent=config.name+' · '+weekLabel(Math.floor((day.row-4)/5));
   $('edit-title').textContent=day.topic?'Edit lesson '+day.topic:'Plan a lesson';$('edit-weekday').textContent=dayNames[(day.row-4)%5];$('edit-error').textContent='';
   form.elements.date.value=day.date||resolvedDate(Math.floor((day.row-4)/5),(day.row-4)%5);
   const select=form.elements.topic;select.replaceChildren(new Option('Select a topic',''));
@@ -230,8 +268,8 @@ async function saveEditor(event){event.preventDefault();if(!state.current||state
   }catch(err){$('edit-error').textContent=err.message;notice('Could not save: '+err.message,'error');}
   finally{state.saving=false;$('save-edit').disabled=false;}
 }
-$('connect').onclick=connect;$('disconnect').onclick=disconnect;$('refresh').onclick=()=>load(false);
-$('previous').onclick=()=>{state.week=Math.max(0,state.week-1);render();};$('next').onclick=()=>{state.week=Math.min(35,state.week+1);render();};
+$('connect').onclick=connect;$('disconnect').onclick=disconnect;$('refresh').onclick=()=>load(false);$('fill-dates').onclick=fillDates;
+$('previous').onclick=()=>{state.week=Math.max(0,state.week-1);render();};$('next').onclick=()=>{state.week=Math.min(WEEK_COUNT-1,state.week+1);render();};
 $('today').onclick=()=>{state.week=firstWeek();render();};
 $('week-picker').onchange=event=>{state.week=Number(event.target.value);render();};
 $('course-filter').onchange=event=>{state.courseFilter=event.target.value;render();};
