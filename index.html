@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#142b5c">
+  <title>Course Planner | AP Biology & Anatomy</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="config.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="hero">
+    <div class="shell">
+      <div class="hero-top"><div class="brand"><span class="brand-mark" aria-hidden="true">AZ</span><span>TEACHER WORKSPACE <b>/</b> 2026–27 PLANNING</span></div><div class="auth"><button id="connect" class="btn light" type="button">Connect Google</button><button id="disconnect" class="btn light hidden" type="button">Disconnect</button></div></div>
+      <div class="hero-title"><div><p class="overline">Two courses. One planning desk.</p><h1>Course <span>Planner</span></h1><p class="intro">Plan lessons, set homework, and see how your teaching is tracking against the calendar.</p></div><div class="hero-decoration" aria-hidden="true"><span>01</span><i></i><span>02</span></div></div>
+    </div>
+  </header>
+  <main class="shell">
+    <div id="notice" class="notice" role="status" aria-live="polite">Connect Google to load your course calendars.</div>
+    <div id="app" class="hidden">
+      <section class="summary" aria-label="Planning progress">
+        <article class="summary-card"><span class="summary-icon bio" aria-hidden="true">BIO</span><div><p>AP Biology</p><strong id="bio-pace">—</strong><small id="bio-stats">Loading</small></div></article>
+        <article class="summary-card"><span class="summary-icon anatomy" aria-hidden="true">A&amp;P</span><div><p>Anatomy &amp; Physiology</p><strong id="anatomy-pace">—</strong><small id="anatomy-stats">Loading</small></div></article>
+        <article class="summary-card compact"><div><p>Planning focus</p><strong id="focus-value">—</strong><small id="focus-detail">Scheduled lessons through today</small></div></article>
+      </section>
+      <section class="toolbar" aria-label="Calendar controls"><div><p class="overline muted">SCHOOL YEAR</p><h2 id="week-title">Week</h2><p id="week-range" class="muted-text"></p></div><div class="toolbar-actions"><label class="course-label" for="week-picker">Jump to <select id="week-picker"></select></label><label class="course-label" for="course-filter">Show <select id="course-filter"><option value="all">Both courses</option><option value="bio">AP Biology</option><option value="anatomy">Anatomy &amp; Physiology</option></select></label><button id="today" class="btn" type="button">Today</button><button id="previous" class="btn square" type="button" aria-label="Previous week">←</button><button id="next" class="btn square" type="button" aria-label="Next week">→</button><button id="refresh" class="btn" type="button">Refresh</button></div></section>
+      <section class="workspace"><div><div class="section-heading"><h2>This week</h2><span id="week-progress" class="micro"></span></div><div id="week-grid" class="week-grid"></div></div><aside class="sidebar"><section class="side-panel"><h2>On your radar</h2><div id="radar"></div></section><section class="side-panel"><h2>Topic finder</h2><p class="side-help">Search either course’s topic list, then open its first scheduled day or copy its code into a plan.</p><label class="sr-only" for="topic-search">Search topics</label><input id="topic-search" class="input" type="search" placeholder="Code or topic name"><div id="topic-results" class="topic-results"></div></section><section class="side-panel links"><h2>Course links</h2><div id="course-links"></div></section></aside></section>
+      <footer>Calendar and topic details come from your two Google Sheets. Saving a plan updates the corresponding calendar row.</footer>
+    </div>
+  </main>
+  <dialog id="editor" aria-labelledby="edit-title"><form id="edit-form">
+    <div class="dialog-top"><div><p id="edit-course" class="overline muted"></p><h2 id="edit-title">Plan a lesson</h2><p id="edit-weekday" class="muted-text"></p></div><button id="close-edit" class="icon-button" type="button" aria-label="Close editor">×</button></div>
+    <div class="form-grid"><label>Date<input name="date" type="date"></label><label>Topic<select name="topic"><option value="">Select a topic</option></select></label></div>
+    <div id="topic-context" class="context">Choose a topic to see its learning target and resources.</div>
+    <label>Class plan<textarea name="classPlan" rows="3" placeholder="Activity, lab, discussion, assessment…"></textarea></label>
+    <label>Homework / after class<textarea name="homework" rows="2" placeholder="Reading, BIOZONE work, practice…"></textarea></label>
+    <label>Teacher note<textarea name="note" rows="2" placeholder="What worked, where to pick up next class…"></textarea></label>
+    <label class="check-label"><input name="taught" type="checkbox"><span><strong>Lesson taught</strong><small>Counts toward pacing after you save</small></span></label>
+    <p id="edit-error" class="form-error" role="alert"></p><div class="dialog-actions"><button id="cancel-edit" class="btn" type="button">Cancel</button><button id="save-edit" class="btn primary" type="submit">Save to Google Sheet</button></div>
+  </form></dialog>
+</body>
+</html>
