@@ -30,6 +30,7 @@ window.DISTRICT_CALENDAR = Object.freeze({
     ['2027-03-29','2027-03-29','Farmworkers Day observed · no classes','closed'],
     ['2027-03-31','2027-03-31','Quarter 3 grades due','deadline'],
     ['2027-04-27','2027-04-27','Fourth progress report due','deadline'],
+    ['2027-05-03','2027-05-03','AP Biology exam · Session 2','milestone'],
     ['2027-05-27','2027-05-27','Student minimum day · last day of instruction','minimum'],
     ['2027-05-28','2027-05-28','Certificated work day · no student classes','closed'],
     ['2027-05-31','2027-05-31','Memorial Day · district holiday','closed'],
