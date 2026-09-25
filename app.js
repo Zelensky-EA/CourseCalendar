@@ -8,6 +8,17 @@ const COURSES={
 const $=id=>document.getElementById(id);
 const state={token:'',expires:0,client:null,courses:{},week:null,courseFilter:'all',current:null,busy:false,saving:false};
 const dayNames=['Monday','Tuesday','Wednesday','Thursday','Friday'];
+const district=window.DISTRICT_CALENDAR;
+const districtEvents=date=>date?district.events.filter(([start,end])=>start<=date&&date<=end):[];
+const noSchool=date=>districtEvents(date).some(event=>event[3]==='closed');
+const isHomeworkDay=(key,day)=>key==='bio'&&(day.row-4)%5===3;
+function lessonFor(key,day){
+  if(key==='anatomy'&&(day.row-4)%5===3){const wed=state.courses.anatomy?.days?.[day.row-5];
+    return wed?{...day,topic:wed.topic,topicTitle:wed.topicTitle,classPlan:wed.classPlan,mirror:wed}:day;
+  }
+  return day;
+}
+function scheduledLesson(key,day){return !noSchool(day.date)&&!isHomeworkDay(key,day)&&planned(lessonFor(key,day));}
 const htmlDate=value=>{if(typeof value==='number'&&Number.isFinite(value)){const d=new Date(Date.UTC(1899,11,30)+Math.round(value)*86400000);return Number.isFinite(d.getTime())?d.toISOString().slice(0,10):'';}return /^\d{4}-\d{2}-\d{2}$/.test(String(value))?String(value):'';};
 const serialDate=value=>value?Math.round((Date.parse(value+'T00:00:00Z')-Date.UTC(1899,11,30))/86400000):'';
 const localToday=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');};
@@ -85,7 +96,7 @@ function disconnect(){const token=state.token;state.token='';state.expires=0;sta
 function text(parent,tag,content,className=''){const node=document.createElement(tag);if(className)node.className=className;node.textContent=content;parent.append(node);return node;}
 function visibleKeys(){return Object.keys(COURSES).filter(key=>state.courses[key]&&(state.courseFilter==='all'||state.courseFilter===key));}
 function planned(day){return !!(day.topic||clean(day.classPlan));}
-function pacing(key){const dates=state.courses[key]?.days.filter(d=>d.date&&d.date<=localToday()&&planned(d))||[];
+function pacing(key){const dates=state.courses[key]?.days.filter(d=>d.date&&d.date<=localToday()&&scheduledLesson(key,d))||[];
   return {scheduled:dates.length,taught:dates.filter(d=>d.taught).length,waiting:dates.filter(d=>!d.taught).length};}
 function renderSummary(){let waiting=0;
   for(const key of Object.keys(COURSES)){
@@ -108,23 +119,27 @@ function renderWeek(){const week=Math.min(35,Math.max(0,state.week||0));state.we
   $('previous').disabled=week===0;$('next').disabled=week===35;
   const grid=$('week-grid');grid.replaceChildren();let taught=0,scheduled=0;
   for(let i=0;i<5;i++){
-    const date=resolvedDate(week,i),card=text(grid,'article','','day'+(date===localToday()?' today':''));
+    const date=resolvedDate(week,i),events=districtEvents(date),card=text(grid,'article','','day'+(date===localToday()?' today':'')+(noSchool(date)?' closed-day':''));
     const head=text(card,'header','','day-head');text(head,'strong',dayNames[i]);text(head,'small',formatDate(date));
+    for(const event of events)text(card,'div',event[2],'district-badge '+event[3]);
     for(const key of visibleKeys()){
-      const day=dayFor(key,week,i);if(!day)continue;
-      if(planned(day)){scheduled++;if(day.taught)taught++;}
+      const day=dayFor(key,week,i);if(!day)continue;const view=lessonFor(key,day),homeworkOnly=isHomeworkDay(key,day);
+      if(scheduledLesson(key,day)){scheduled++;if(day.taught)taught++;}
       const lesson=text(card,'div','','lesson '+key),top=text(lesson,'div','','lesson-top');text(top,'span',COURSES[key].short,'lesson-tag');
-      text(top,'span',day.taught?'Taught':day.date&&day.date<localToday()&&planned(day)?'Review':'Planned',day.taught?'state done':day.date&&day.date<localToday()&&planned(day)?'state late':'state');
-      const subject=state.courses[key].topics.find(topic=>topic.code===day.topic);
-      if(day.topic||day.topicTitle)text(lesson,'div',(day.topic?day.topic+' · ':'')+(subject?.title||day.topicTitle.split('\n')[0]||'Topic'), 'topic-title');
-      else text(lesson,'div','No topic selected','lesson-empty');
-      if(clean(day.classPlan))text(lesson,'p',clean(day.classPlan),'plan-preview');
-      const button=text(lesson,'button',planned(day)?'Edit plan':'Add plan','edit-lesson');button.type='button';button.onclick=()=>openEditor(key,day);
+      text(top,'span',noSchool(day.date)?'No classes':homeworkOnly?'Homework only':day.taught?'Taught':day.date&&day.date<localToday()&&scheduledLesson(key,day)?'Review':'Planned',day.taught&&!noSchool(day.date)&&!homeworkOnly?'state done':day.date&&day.date<localToday()&&scheduledLesson(key,day)?'state late':'state');
+      if(key==='anatomy'&&i===3)text(lesson,'div','Thursday repeats Wednesday’s lesson','routine');
+      if(homeworkOnly)text(lesson,'div','No AP Biology class Thursday','routine');
+      const subject=state.courses[key].topics.find(topic=>topic.code===view.topic);
+      if(view.topic||view.topicTitle)text(lesson,'div',(view.topic?view.topic+' · ':'')+(subject?.title||view.topicTitle.split('\n')[0]||'Topic'), 'topic-title');
+      else if(!homeworkOnly)text(lesson,'div','No topic selected','lesson-empty');
+      if(!homeworkOnly&&clean(view.classPlan))text(lesson,'p',clean(view.classPlan),'plan-preview');
+      if(clean(day.homework))text(lesson,'p','Homework: '+clean(day.homework),'plan-preview');
+      const button=text(lesson,'button',homeworkOnly?'Edit homework':planned(day)?'Edit plan':'Add plan','edit-lesson');button.type='button';button.onclick=()=>openEditor(key,day);
     }
   }
   $('week-progress').textContent=taught+' of '+scheduled+' planned lessons marked taught';
 }
-function renderRadar(){const root=$('radar');root.replaceChildren();const tasks=[];for(const key of visibleKeys())for(const day of state.courses[key].days){if(day.date&&day.date<localToday()&&planned(day)&&!day.taught)tasks.push({key,day});}
+function renderRadar(){const root=$('radar');root.replaceChildren();const tasks=[];for(const key of visibleKeys())for(const day of state.courses[key].days){if(day.date&&day.date<localToday()&&scheduledLesson(key,day)&&!day.taught)tasks.push({key,day});}
   tasks.sort((a,b)=>b.day.date.localeCompare(a.day.date));
   if(!tasks.length){const line=text(root,'div','No dated lessons awaiting a taught check.','radar-line');return;}
   for(const task of tasks.slice(0,4)){
@@ -132,6 +147,9 @@ function renderRadar(){const root=$('radar');root.replaceChildren();const tasks=
     const title=state.courses[task.key].topics.find(t=>t.code===task.day.topic)?.title||clean(task.day.classPlan)||'Unfinished plan';
     text(item,'span',title.slice(0,76));const button=text(item,'button','Review lesson');button.type='button';button.onclick=()=>{state.week=Math.floor((task.day.row-4)/5);renderWeek();openEditor(task.key,task.day);};
   }
+}
+function renderDistrictDates(){const root=$('district-dates');root.replaceChildren();const today=localToday();let future=district.events.filter(event=>event[1]>=today);if(!future.length)future=district.events.slice(-5);
+  for(const [start,end,label,kind] of future.slice(0,7)){const item=text(root,'div','','district-event '+kind);text(item,'strong',formatDate(start)+(end!==start?' – '+formatDate(end):''));text(item,'span',label);}
 }
 function renderTopics(){const root=$('topic-results');root.replaceChildren();const query=clean($('topic-search').value).toLowerCase();if(!query){text(root,'p','Search the topic code or title.','no-results');return;}
   const found=[];for(const key of Object.keys(COURSES))for(const topic of state.courses[key]?.topics||[]){if((topic.code+' '+topic.title).toLowerCase().includes(query))found.push({key,topic});}
@@ -145,13 +163,13 @@ function renderTopics(){const root=$('topic-results');root.replaceChildren();con
 function renderLinks(){const root=$('course-links');root.replaceChildren();let found=false;for(const course of Object.values(COURSES)){if(!course.page)continue;
   try{const url=new URL(course.page);if(!['https:','http:'].includes(url.protocol))continue;const a=text(root,'a',course.name+' page ↗');a.href=url.href;a.target='_blank';a.rel='noopener noreferrer';found=true;}catch{}
   }if(!found)text(root,'p','Add your existing course page links in config.js to see them here.','side-help');}
-function render(){renderSummary();renderWeek();renderRadar();renderTopics();renderLinks();}
+function render(){renderSummary();renderWeek();renderRadar();renderDistrictDates();renderTopics();renderLinks();}
 function topicContext(key,code){const topic=state.courses[key]?.topics.find(item=>item.code===code);if(!topic)return 'Choose a topic to see its learning target and resources.';
   return [topic.title,topic.target?'Target: '+topic.target:'',...topic.resources.slice(0,3).map(([label,value])=>label+': '+value),topic.detail?'Planning note: '+topic.detail:''].filter(Boolean).join('\n');
 }
 function openEditor(key,day){if(!connected()){notice('Connect Google to edit a lesson.','error');return;}
   state.current={key,row:day.row,original:{...day}};
-  const form=$('edit-form'),config=COURSES[key],course=state.courses[key];
+  const form=$('edit-form'),config=COURSES[key],course=state.courses[key],thursday=(day.row-4)%5===3,mirror=key==='anatomy'&&thursday,homeworkOnly=isHomeworkDay(key,day),view=lessonFor(key,day);
   $('edit-course').textContent=config.name+' · Week '+(Math.floor((day.row-4)/5)+1);
   $('edit-title').textContent=day.topic?'Edit lesson '+day.topic:'Plan a lesson';$('edit-weekday').textContent=dayNames[(day.row-4)%5];$('edit-error').textContent='';
   form.elements.date.value=day.date||resolvedDate(Math.floor((day.row-4)/5),(day.row-4)%5);
@@ -159,20 +177,30 @@ function openEditor(key,day){if(!connected()){notice('Connect Google to edit a l
   for(const topic of course.topics)select.add(new Option(topic.code+' · '+topic.title,topic.code));
   if(day.topic&&!course.topics.some(topic=>topic.code===day.topic))select.add(new Option(day.topic+' · Current sheet value',day.topic));
   select.value=day.topic;form.elements.classPlan.value=day.classPlan;form.elements.homework.value=day.homework;form.elements.note.value=day.note;form.elements.taught.checked=day.taught;
-  $('topic-context').textContent=topicContext(key,day.topic);
+  select.disabled=mirror;form.elements.classPlan.disabled=mirror||homeworkOnly;form.elements.taught.disabled=homeworkOnly;
+  $('class-plan-label').classList.toggle('hidden',mirror||homeworkOnly);$('taught-label').classList.toggle('hidden',homeworkOnly);
+  $('topic-context').textContent=mirror?topicContext(key,view.topic):topicContext(key,day.topic);
+  updateDayGuidance();
   $('editor').showModal();
+}
+function updateDayGuidance(){if(!state.current)return;const {key,row}=state.current,day=state.courses[key]?.days?.[row-4],form=$('edit-form'),date=form.elements.date.value,events=districtEvents(date),guide=[];
+  if(key==='anatomy'&&(row-4)%5===3)guide.push('Thursday repeats Wednesday’s Anatomy lesson. Edit the Wednesday card to change that shared plan; Thursday homework and notes are separate.');
+  if(isHomeworkDay(key,day))guide.push('AP Biology does not meet on Thursday. This card is for homework and teacher notes.');
+  guide.push(...events.map(event=>event[2]+(event[3]==='closed'?' — avoid scheduling an in-class lesson.':'')));
+  const node=$('day-guidance');node.textContent=guide.join(' ');node.classList.toggle('hidden',!guide.length);
 }
 async function saveEditor(event){event.preventDefault();if(!state.current||state.saving)return;
   const {key,row,original}=state.current,course=COURSES[key],data=state.courses[key],form=$('edit-form');$('edit-error').textContent='';
   if(!connected()){$('edit-error').textContent='Session expired. Connect Google again.';return;}
   const date=form.elements.date.value;if(date&&htmlDate(serialDate(date))!==date){$('edit-error').textContent='Enter a valid date.';return;}
+  const mirror=key==='anatomy'&&(row-4)%5===3,homeworkOnly=isHomeworkDay(key,original);
   const inputs=[
     {column:2,old:original.rawDate,newValue:date?serialDate(date):'',kind:'date'},
-    {column:3,old:original.topic,newValue:form.elements.topic.value,kind:'text'},
-    {column:5,old:original.classPlan,newValue:form.elements.classPlan.value.trim(),kind:'text'},
+    {column:3,old:original.topic,newValue:mirror?original.topic:form.elements.topic.value,kind:'text'},
+    {column:5,old:original.classPlan,newValue:mirror||homeworkOnly?original.classPlan:form.elements.classPlan.value.trim(),kind:'text'},
     {column:8,old:original.homework,newValue:form.elements.homework.value.trim(),kind:'text'},
     {column:10,old:original.note,newValue:form.elements.note.value.trim(),kind:'text'},
-    {column:11,old:original.rawTaught,newValue:form.elements.taught.checked,kind:'taught'}
+    {column:11,old:original.rawTaught,newValue:homeworkOnly?original.taught:form.elements.taught.checked,kind:'taught'}
   ];
   const comparable=input=>input.kind==='date'?(v=>htmlDate(v)):input.kind==='taught'?(v=>v===true||String(v).toLowerCase()==='true'):(v=>safeText(v));
   const changes=inputs.filter(field=>comparable(field)(field.old)!==comparable(field)(field.newValue));
@@ -209,5 +237,6 @@ $('week-picker').onchange=event=>{state.week=Number(event.target.value);render()
 $('course-filter').onchange=event=>{state.courseFilter=event.target.value;render();};
 $('topic-search').oninput=renderTopics;
 $('edit-form').onsubmit=saveEditor;$('edit-form').elements.topic.onchange=event=>{$('topic-context').textContent=topicContext(state.current?.key,event.target.value);};
+$('edit-form').elements.date.onchange=updateDayGuidance;
 $('close-edit').onclick=$('cancel-edit').onclick=()=>$('editor').close();
 $('editor').addEventListener('close',()=>{if(!state.saving)state.current=null;});
